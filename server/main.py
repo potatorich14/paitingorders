@@ -675,11 +675,49 @@ def get_orders():
             h.total_pages,
             h.locked_by,
             COALESCE(u.full_name, u.username, '') as locked_by_name,
-            h.uuid
+            h.uuid,
+            h.painter_id,
+            COALESCE(p.name, '') as painter_name
         FROM orders h
         LEFT JOIN contractors c ON h.contractor_id = c.id
         LEFT JOIN users u ON h.locked_by = u.id
+        LEFT JOIN painters p ON h.painter_id = p.id
         ORDER BY h.created_at DESC
+        LIMIT 100
+    ''')
+    result = cursor.fetchall()
+    conn.close()
+    return jsonify([list(r) for r in result])
+
+@app.route('/api/orders/list', methods=['GET'])
+def get_orders_list():
+    """Получить список заказов без позиций (быстрая загрузка)"""
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Не авторизован"}), 401
+    
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT 
+            h.id, h.order_number, h.created_at, 
+            COALESCE(c.name, '') as contractor, h.workshop,
+            COALESCE((SELECT COUNT(*) FROM order_items i WHERE i.order_id = h.id), 0) as positions,
+            COALESCE((SELECT SUM(i.total_meters) FROM order_items i WHERE i.order_id = h.id AND i.measure_type = 'meters'), 0) as total_meters,
+            COALESCE((SELECT SUM(i.total_weight) FROM order_items i WHERE i.order_id = h.id), 0) as total_weight,
+            h.total_pages,
+            h.locked_by,
+            COALESCE(u.full_name, u.username, '') as locked_by_name,
+            h.uuid,
+            h.painter_id,
+            COALESCE(p.name, '') as painter_name
+        FROM orders h
+        LEFT JOIN contractors c ON h.contractor_id = c.id
+        LEFT JOIN users u ON h.locked_by = u.id
+        LEFT JOIN painters p ON h.painter_id = p.id
+        ORDER BY h.created_at DESC
+        LIMIT 100
     ''')
     result = cursor.fetchall()
     conn.close()
@@ -705,10 +743,13 @@ def get_recent_orders():
             h.total_pages,
             h.locked_by,
             COALESCE(u.full_name, u.username, '') as locked_by_name,
-            h.uuid
+            h.uuid,
+            h.painter_id,
+            COALESCE(p.name, '') as painter_name
         FROM orders h
         LEFT JOIN contractors c ON h.contractor_id = c.id
         LEFT JOIN users u ON h.locked_by = u.id
+        LEFT JOIN painters p ON h.painter_id = p.id
         ORDER BY h.created_at DESC
         LIMIT 30
     ''')
@@ -740,10 +781,13 @@ def get_orders_page():
             h.total_pages,
             h.locked_by,
             COALESCE(u.full_name, u.username, '') as locked_by_name,
-            h.uuid
+            h.uuid,
+            h.painter_id,
+            COALESCE(p.name, '') as painter_name
         FROM orders h
         LEFT JOIN contractors c ON h.contractor_id = c.id
         LEFT JOIN users u ON h.locked_by = u.id
+        LEFT JOIN painters p ON h.painter_id = p.id
         ORDER BY h.created_at DESC
         LIMIT ? OFFSET ?
     ''', (per_page, offset))
@@ -776,10 +820,13 @@ def search_orders():
             h.total_pages,
             h.locked_by,
             COALESCE(u.full_name, u.username, '') as locked_by_name,
-            h.uuid
+            h.uuid,
+            h.painter_id,
+            COALESCE(p.name, '') as painter_name
         FROM orders h
         LEFT JOIN contractors c ON h.contractor_id = c.id
         LEFT JOIN users u ON h.locked_by = u.id
+        LEFT JOIN painters p ON h.painter_id = p.id
         WHERE h.order_number LIKE ?
         ORDER BY h.created_at DESC
     ''', (f'%{query}%',))
