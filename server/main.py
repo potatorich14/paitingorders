@@ -84,6 +84,8 @@ def init_db():
             workshop INTEGER DEFAULT 1,
             painter_id INTEGER,
             total_pages INTEGER DEFAULT 1,
+            default_color TEXT DEFAULT '',
+            page_default_colors TEXT DEFAULT '{}',
             created_by INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -696,6 +698,7 @@ def get_order(order_id):
     
     cursor.execute("""
         SELECT id, order_number, contractor_id, workshop, painter_id, total_pages, 
+               default_color, page_default_colors,
                created_by, created_at, updated_at, version, locked_by, locked_at, uuid
         FROM orders WHERE id = ?
     """, (order_id,))
@@ -736,6 +739,8 @@ def save_order():
     workshop = data.get('workshop', 1)
     painter_id = data.get('painter_id')
     total_pages = data.get('total_pages', 1)
+    default_color = data.get('default_color', '')
+    page_default_colors = data.get('page_default_colors', {})
     items = data.get('items', [])
     user_id = data.get('user_id', user['id'])
     
@@ -756,9 +761,12 @@ def save_order():
                 cursor.execute('''
                     UPDATE orders 
                     SET contractor_id = ?, workshop = ?, painter_id = ?, total_pages = ?,
+                        default_color = ?, page_default_colors = ?,
                         updated_at = CURRENT_TIMESTAMP, version = ?, uuid = ?
                     WHERE id = ?
-                ''', (contractor_id, workshop, painter_id, total_pages, new_version, db_uuid, order_id))
+                ''', (contractor_id, workshop, painter_id, total_pages,
+                      default_color, json.dumps(page_default_colors, ensure_ascii=False),
+                      new_version, db_uuid, order_id))
                 
                 cursor.execute("DELETE FROM order_items WHERE order_id = ?", (order_id,))
                 
@@ -783,6 +791,8 @@ def save_order():
                     "workshop": workshop,
                     "painter_id": painter_id,
                     "total_pages": total_pages,
+                    "default_color": default_color,
+                    "page_default_colors": page_default_colors,
                     "items": items
                 }
                 cursor.execute('''
@@ -800,9 +810,11 @@ def save_order():
         else:
             # СОЗДАНИЕ НОВОЙ ЗАЯВКИ
             cursor.execute('''
-                INSERT INTO orders (uuid, order_number, contractor_id, workshop, painter_id, total_pages, created_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (order_uuid, order_number, contractor_id, workshop, painter_id, total_pages, user_id))
+                INSERT INTO orders (uuid, order_number, contractor_id, workshop, painter_id, total_pages,
+                                    default_color, page_default_colors, created_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (order_uuid, order_number, contractor_id, workshop, painter_id, total_pages,
+                  default_color, json.dumps(page_default_colors, ensure_ascii=False), user_id))
             
             new_order_id = cursor.lastrowid
             
@@ -827,6 +839,8 @@ def save_order():
                 "workshop": workshop,
                 "painter_id": painter_id,
                 "total_pages": total_pages,
+                "default_color": default_color,
+                "page_default_colors": page_default_colors,
                 "items": items
             }
             cursor.execute('''
