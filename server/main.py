@@ -403,93 +403,6 @@ def create_user():
         "is_active": True
     })
 
-# ========== API: СПРАВОЧНИКИ (ЧТЕНИЕ) ==========
-@app.route('/api/profiles', methods=['GET'])
-def get_profiles():
-    """Получить все профили"""
-    user = get_current_user()
-    if not user:
-        return jsonify({"detail": "Не авторизован"}), 401
-    
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT p.name, c.name as category, p.height_mm, p.width_mm, 
-               p.weight_kg_per_meter, p.stick_length_meters, p.image_path, 
-               COALESCE(p.price, 0) as price, COALESCE(p.measure_type, 'meters') as measure_type,
-               p.model_3d_path, p.uuid
-        FROM profiles p 
-        LEFT JOIN categories c ON p.category_id = c.id 
-        ORDER BY c.name, p.name
-    """)
-    result = cursor.fetchall()
-    conn.close()
-    return jsonify([list(r) for r in result])
-
-@app.route('/api/colors', methods=['GET'])
-def get_colors():
-    """Получить список цветов"""
-    user = get_current_user()
-    if not user:
-        return jsonify({"detail": "Не авторизован"}), 401
-    
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, name, code, category_id FROM colors ORDER BY name")
-    result = cursor.fetchall()
-    conn.close()
-    return jsonify([list(r) for r in result])
-
-@app.route('/api/contractors', methods=['GET'])
-def get_contractors():
-    """Получить список контрагентов"""
-    user = get_current_user()
-    if not user:
-        return jsonify({"detail": "Не авторизован"}), 401
-    
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, name, phone, email FROM contractors ORDER BY name")
-    result = cursor.fetchall()
-    conn.close()
-    return jsonify([list(r) for r in result])
-
-@app.route('/api/painters', methods=['GET'])
-def get_painters():
-    """Получить список покрасчиков"""
-    user = get_current_user()
-    if not user:
-        return jsonify({"detail": "Не авторизован"}), 401
-    
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT id, name, phone, address, COALESCE(max_paint_length_m, 3.0) 
-        FROM painters ORDER BY name
-    """)
-    result = cursor.fetchall()
-    conn.close()
-    return jsonify([list(r) for r in result])
-
-@app.route('/api/categories', methods=['GET'])
-def get_categories():
-    """Получить список категорий"""
-    user = get_current_user()
-    if not user:
-        return jsonify({"detail": "Не авторизован"}), 401
-    
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, name FROM categories ORDER BY name")
-    result = cursor.fetchall()
-    conn.close()
-    return jsonify([list(r) for r in result])
-
 # ========== API: СПРАВОЧНИКИ (ЗАПИСЬ) ==========
 
 @app.route('/api/categories', methods=['POST'])
@@ -651,6 +564,93 @@ def create_painter():
     except sqlite3.IntegrityError:
         conn.close()
         return jsonify({"detail": "Покрасчик с таким именем уже существует"}), 400
+
+# ========== API: СПРАВОЧНИКИ (ЧТЕНИЕ) ==========
+@app.route('/api/profiles', methods=['GET'])
+def get_profiles():
+    """Получить все профили"""
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Не авторизован"}), 401
+    
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT p.name, c.name as category, p.height_mm, p.width_mm, 
+               p.weight_kg_per_meter, p.stick_length_meters, p.image_path, 
+               COALESCE(p.price, 0) as price, COALESCE(p.measure_type, 'meters') as measure_type,
+               p.model_3d_path, p.uuid
+        FROM profiles p 
+        LEFT JOIN categories c ON p.category_id = c.id 
+        ORDER BY c.name, p.name
+    """)
+    result = cursor.fetchall()
+    conn.close()
+    return jsonify([list(r) for r in result])
+
+@app.route('/api/colors', methods=['GET'])
+def get_colors():
+    """Получить список цветов"""
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Не авторизован"}), 401
+    
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, code, category_id FROM colors ORDER BY name")
+    result = cursor.fetchall()
+    conn.close()
+    return jsonify([list(r) for r in result])
+
+@app.route('/api/contractors', methods=['GET'])
+def get_contractors():
+    """Получить список контрагентов"""
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Не авторизован"}), 401
+    
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, phone, email FROM contractors ORDER BY name")
+    result = cursor.fetchall()
+    conn.close()
+    return jsonify([list(r) for r in result])
+
+@app.route('/api/painters', methods=['GET'])
+def get_painters():
+    """Получить список покрасчиков"""
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Не авторизован"}), 401
+    
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, name, phone, address, COALESCE(max_paint_length_m, 3.0) 
+        FROM painters ORDER BY name
+    """)
+    result = cursor.fetchall()
+    conn.close()
+    return jsonify([list(r) for r in result])
+
+@app.route('/api/categories', methods=['GET'])
+def get_categories():
+    """Получить список категорий"""
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Не авторизован"}), 401
+    
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name FROM categories ORDER BY name")
+    result = cursor.fetchall()
+    conn.close()
+    return jsonify([list(r) for r in result])
 
 # ========== API: ЗАКАЗЫ ==========
 @app.route('/api/orders', methods=['GET'])
