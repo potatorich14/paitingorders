@@ -1,4 +1,4 @@
-# server/main.py
+# server/main.py (упрощённый вариант без flask-cors)
 import os
 import sys
 import json
@@ -11,10 +11,8 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Any
 
 from flask import Flask, request, jsonify, g
-from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)
 
 # Путь к базе данных
 DB_PATH = os.path.join(os.path.dirname(__file__), "server_data", "painting_orders.db")
