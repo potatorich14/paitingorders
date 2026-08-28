@@ -43,20 +43,6 @@ def generate_token() -> str:
     """Генерация токена сессии"""
     return secrets.token_urlsafe(32)
 
-def execute_with_retry(func, max_retries=5, delay=0.1):
-    """Выполняет функцию с повторными попытками при блокировке БД"""
-    last_error = None
-    for attempt in range(max_retries):
-        try:
-            return func()
-        except sqlite3.OperationalError as e:
-            last_error = e
-            if "database is locked" in str(e) and attempt < max_retries - 1:
-                time.sleep(delay * (attempt + 1))
-                continue
-            raise
-    raise last_error
-
 def init_db():
     """Создаёт таблицы в SQLite"""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
@@ -417,7 +403,7 @@ def create_user():
         "is_active": True
     })
 
-# ========== API: СПРАВОЧНИКИ ==========
+# ========== API: СПРАВОЧНИКИ (ЧТЕНИЕ) ==========
 @app.route('/api/profiles', methods=['GET'])
 def get_profiles():
     """Получить все профили"""
@@ -504,6 +490,168 @@ def get_categories():
     conn.close()
     return jsonify([list(r) for r in result])
 
+# ========== API: СПРАВОЧНИКИ (ЗАПИСЬ) ==========
+
+@app.route('/api/categories', methods=['POST'])
+def create_category():
+    """Добавить категорию"""
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Не авторизован"}), 401
+    
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    
+    if not name:
+        return jsonify({"detail": "Введите название категории"}), 400
+    
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("INSERT INTO categories (name) VALUES (?)", (name,))
+        category_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return jsonify({"id": category_id, "name": name})
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({"detail": "Категория с таким именем уже существует"}), 400
+
+@app.route('/api/profiles', methods=['POST'])
+def create_profile():
+    """Добавить профиль"""
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Не авторизован"}), 401
+    
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    category_id = data.get('category_id')
+    height_mm = data.get('height_mm', 0)
+    width_mm = data.get('width_mm', 0)
+    weight_kg_per_meter = data.get('weight_kg_per_meter', 0.5)
+    stick_length_meters = data.get('stick_length_meters', 6.0)
+    image_path = data.get('image_path')
+    price = data.get('price', 0)
+    measure_type = data.get('measure_type', 'meters')
+    model_3d_path = data.get('model_3d_path')
+    profile_uuid = data.get('uuid') or str(uuid.uuid4())
+    
+    if not name:
+        return jsonify({"detail": "Введите название профиля"}), 400
+    
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            INSERT INTO profiles (name, category_id, height_mm, width_mm, weight_kg_per_meter,
+                                  stick_length_meters, image_path, price, measure_type, model_3d_path, uuid)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (name, category_id, height_mm, width_mm, weight_kg_per_meter,
+              stick_length_meters, image_path, price, measure_type, model_3d_path, profile_uuid))
+        profile_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return jsonify({"id": profile_id, "name": name})
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({"detail": "Профиль с таким именем уже существует"}), 400
+
+@app.route('/api/colors', methods=['POST'])
+def create_color():
+    """Добавить цвет"""
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Не авторизован"}), 401
+    
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    code = data.get('code', '')
+    category_id = data.get('category_id')
+    
+    if not name:
+        return jsonify({"detail": "Введите название цвета"}), 400
+    
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("INSERT INTO colors (name, code, category_id) VALUES (?, ?, ?)", (name, code, category_id))
+        color_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return jsonify({"id": color_id, "name": name})
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({"detail": "Цвет с таким именем уже существует"}), 400
+
+@app.route('/api/contractors', methods=['POST'])
+def create_contractor():
+    """Добавить контрагента"""
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Не авторизован"}), 401
+    
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    phone = data.get('phone', '')
+    email = data.get('email', '')
+    
+    if not name:
+        return jsonify({"detail": "Введите название контрагента"}), 400
+    
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("INSERT INTO contractors (name, phone, email) VALUES (?, ?, ?)", (name, phone, email))
+        contractor_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return jsonify({"id": contractor_id, "name": name})
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({"detail": "Контрагент с таким именем уже существует"}), 400
+
+@app.route('/api/painters', methods=['POST'])
+def create_painter():
+    """Добавить покрасчика"""
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Не авторизован"}), 401
+    
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    phone = data.get('phone', '')
+    address = data.get('address', '')
+    max_paint_length_m = data.get('max_paint_length_m', 3.0)
+    
+    if not name:
+        return jsonify({"detail": "Введите название покрасчика"}), 400
+    
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            INSERT INTO painters (name, phone, address, max_paint_length_m)
+            VALUES (?, ?, ?, ?)
+        """, (name, phone, address, max_paint_length_m))
+        painter_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return jsonify({"id": painter_id, "name": name})
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({"detail": "Покрасчик с таким именем уже существует"}), 400
+
 # ========== API: ЗАКАЗЫ ==========
 @app.route('/api/orders', methods=['GET'])
 def get_orders():
@@ -581,8 +729,8 @@ def save_order():
         return jsonify({"detail": "Не авторизован"}), 401
     
     data = request.get_json()
-    order_id = data.get('order_id')  # Может быть None
-    order_uuid = data.get('order_uuid')  # Может быть None
+    order_id = data.get('order_id')
+    order_uuid = data.get('order_uuid') or str(uuid.uuid4())
     order_number = data.get('order_number', '')
     contractor_id = data.get('contractor_id')
     workshop = data.get('workshop', 1)
@@ -590,10 +738,6 @@ def save_order():
     total_pages = data.get('total_pages', 1)
     items = data.get('items', [])
     user_id = data.get('user_id', user['id'])
-    
-    # ЕСЛИ НЕТ UUID - ГЕНЕРИРУЕМ НА СЕРВЕРЕ
-    if not order_uuid:
-        order_uuid = str(uuid.uuid4())
     
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -631,7 +775,6 @@ def save_order():
                           item.get('is_defective', 0), item.get('defective_id'), item.get('defective_quantity', 0),
                           item.get('page_painter_id'), item.get('current_status', 'Новая')))
                 
-                # Создаём новую версию
                 order_data = {
                     "order_id": order_id,
                     "order_uuid": db_uuid,
@@ -676,7 +819,6 @@ def save_order():
                       item.get('is_defective', 0), item.get('defective_id'), item.get('defective_quantity', 0),
                       item.get('page_painter_id'), item.get('current_status', 'Новая')))
             
-            # Создаём первую версию
             order_data = {
                 "order_id": new_order_id,
                 "order_uuid": order_uuid,
