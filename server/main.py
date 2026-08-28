@@ -258,47 +258,44 @@ def login():
     username = data.get('username', '')
     password = data.get('password', '')
     
-    def _login():
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
-        user = cursor.fetchone()
-        
-        if not user:
-            conn.close()
-            return jsonify({"detail": "Неверный логин или пароль"}), 401
-        
-        if not verify_password(password, user['password_hash']):
-            conn.close()
-            return jsonify({"detail": "Неверный логин или пароль"}), 401
-        
-        if not user['is_active']:
-            conn.close()
-            return jsonify({"detail": "Аккаунт отключён"}), 403
-        
-        token = generate_token()
-        expires_at = datetime.now() + timedelta(days=7)
-        
-        cursor.execute("""
-            INSERT INTO sessions (token, user_id, expires_at)
-            VALUES (?, ?, ?)
-        """, (token, user['id'], expires_at.isoformat()))
-        conn.commit()
-        conn.close()
-        
-        return jsonify({
-            "token": token,
-            "user": {
-                "id": user['id'],
-                "username": user['username'],
-                "full_name": user['full_name'],
-                "role": user['role']
-            }
-        })
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
     
-    return execute_with_retry(_login)
+    cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+    user = cursor.fetchone()
+    
+    if not user:
+        conn.close()
+        return jsonify({"detail": "Неверный логин или пароль"}), 401
+    
+    if not verify_password(password, user['password_hash']):
+        conn.close()
+        return jsonify({"detail": "Неверный логин или пароль"}), 401
+    
+    if not user['is_active']:
+        conn.close()
+        return jsonify({"detail": "Аккаунт отключён"}), 403
+    
+    token = generate_token()
+    expires_at = datetime.now() + timedelta(days=7)
+    
+    cursor.execute("""
+        INSERT INTO sessions (token, user_id, expires_at)
+        VALUES (?, ?, ?)
+    """, (token, user['id'], expires_at.isoformat()))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({
+        "token": token,
+        "user": {
+            "id": user['id'],
+            "username": user['username'],
+            "full_name": user['full_name'],
+            "role": user['role']
+        }
+    })
 
 @app.route('/api/auth/logout', methods=['POST'])
 def logout():
@@ -306,16 +303,11 @@ def logout():
     auth_header = request.headers.get('Authorization', '')
     if auth_header.startswith('Bearer '):
         token = auth_header[7:]
-        
-        def _logout():
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM sessions WHERE token = ?", (token,))
-            conn.commit()
-            conn.close()
-        
-        execute_with_retry(_logout)
-    
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM sessions WHERE token = ?", (token,))
+        conn.commit()
+        conn.close()
     return jsonify({"message": "Выход выполнен"})
 
 def get_current_user():
@@ -326,24 +318,19 @@ def get_current_user():
     
     token = auth_header[7:]
     
-    def _get_user():
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-            SELECT u.id, u.username, u.full_name, u.role, u.is_active,
-                   s.expires_at
-            FROM sessions s
-            JOIN users u ON s.user_id = u.id
-            WHERE s.token = ?
-        """, (token,))
-        row = cursor.fetchone()
-        conn.close()
-        
-        return row
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
     
-    row = execute_with_retry(_get_user)
+    cursor.execute("""
+        SELECT u.id, u.username, u.full_name, u.role, u.is_active,
+               s.expires_at
+        FROM sessions s
+        JOIN users u ON s.user_id = u.id
+        WHERE s.token = ?
+    """, (token,))
+    row = cursor.fetchone()
+    conn.close()
     
     if not row:
         return None
@@ -353,14 +340,11 @@ def get_current_user():
         try:
             expires_at = datetime.fromisoformat(row['expires_at'])
             if expires_at < datetime.now():
-                def _delete_session():
-                    conn = sqlite3.connect(DB_PATH)
-                    cursor = conn.cursor()
-                    cursor.execute("DELETE FROM sessions WHERE token = ?", (token,))
-                    conn.commit()
-                    conn.close()
-                
-                execute_with_retry(_delete_session)
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM sessions WHERE token = ?", (token,))
+                conn.commit()
+                conn.close()
                 return None
         except:
             pass
@@ -381,16 +365,13 @@ def get_users():
     if not user or user['role'] != 'admin':
         return jsonify({"detail": "Недостаточно прав"}), 403
     
-    def _get_users():
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, username, full_name, role, is_active, created_at FROM users ORDER BY username")
-        users = cursor.fetchall()
-        conn.close()
-        return jsonify([dict(u) for u in users])
-    
-    return execute_with_retry(_get_users)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, username, full_name, role, is_active, created_at FROM users ORDER BY username")
+    users = cursor.fetchall()
+    conn.close()
+    return jsonify([dict(u) for u in users])
 
 @app.route('/api/users', methods=['POST'])
 def create_user():
@@ -411,33 +392,30 @@ def create_user():
     if len(password) < 6:
         return jsonify({"detail": "Пароль должен содержать минимум 6 символов"}), 400
     
-    def _create_user():
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT COUNT(*) FROM users WHERE username = ?", (username,))
-        if cursor.fetchone()[0] > 0:
-            conn.close()
-            return jsonify({"detail": "Пользователь с таким именем уже существует"}), 400
-        
-        password_hash = hash_password(password)
-        cursor.execute("""
-            INSERT INTO users (username, password_hash, full_name, role)
-            VALUES (?, ?, ?, ?)
-        """, (username, password_hash, full_name, role))
-        user_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-        
-        return jsonify({
-            "id": user_id,
-            "username": username,
-            "full_name": full_name,
-            "role": role,
-            "is_active": True
-        })
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
     
-    return execute_with_retry(_create_user)
+    cursor.execute("SELECT COUNT(*) FROM users WHERE username = ?", (username,))
+    if cursor.fetchone()[0] > 0:
+        conn.close()
+        return jsonify({"detail": "Пользователь с таким именем уже существует"}), 400
+    
+    password_hash = hash_password(password)
+    cursor.execute("""
+        INSERT INTO users (username, password_hash, full_name, role)
+        VALUES (?, ?, ?, ?)
+    """, (username, password_hash, full_name, role))
+    user_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    
+    return jsonify({
+        "id": user_id,
+        "username": username,
+        "full_name": full_name,
+        "role": role,
+        "is_active": True
+    })
 
 # ========== API: СПРАВОЧНИКИ ==========
 @app.route('/api/profiles', methods=['GET'])
@@ -447,24 +425,21 @@ def get_profiles():
     if not user:
         return jsonify({"detail": "Не авторизован"}), 401
     
-    def _get_profiles():
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT p.name, c.name as category, p.height_mm, p.width_mm, 
-                   p.weight_kg_per_meter, p.stick_length_meters, p.image_path, 
-                   COALESCE(p.price, 0) as price, COALESCE(p.measure_type, 'meters') as measure_type,
-                   p.model_3d_path, p.uuid
-            FROM profiles p 
-            LEFT JOIN categories c ON p.category_id = c.id 
-            ORDER BY c.name, p.name
-        """)
-        result = cursor.fetchall()
-        conn.close()
-        return jsonify([list(r) for r in result])
-    
-    return execute_with_retry(_get_profiles)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT p.name, c.name as category, p.height_mm, p.width_mm, 
+               p.weight_kg_per_meter, p.stick_length_meters, p.image_path, 
+               COALESCE(p.price, 0) as price, COALESCE(p.measure_type, 'meters') as measure_type,
+               p.model_3d_path, p.uuid
+        FROM profiles p 
+        LEFT JOIN categories c ON p.category_id = c.id 
+        ORDER BY c.name, p.name
+    """)
+    result = cursor.fetchall()
+    conn.close()
+    return jsonify([list(r) for r in result])
 
 @app.route('/api/colors', methods=['GET'])
 def get_colors():
@@ -473,16 +448,13 @@ def get_colors():
     if not user:
         return jsonify({"detail": "Не авторизован"}), 401
     
-    def _get_colors():
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, name, code, category_id FROM colors ORDER BY name")
-        result = cursor.fetchall()
-        conn.close()
-        return jsonify([list(r) for r in result])
-    
-    return execute_with_retry(_get_colors)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, code, category_id FROM colors ORDER BY name")
+    result = cursor.fetchall()
+    conn.close()
+    return jsonify([list(r) for r in result])
 
 @app.route('/api/contractors', methods=['GET'])
 def get_contractors():
@@ -491,16 +463,13 @@ def get_contractors():
     if not user:
         return jsonify({"detail": "Не авторизован"}), 401
     
-    def _get_contractors():
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, name, phone, email FROM contractors ORDER BY name")
-        result = cursor.fetchall()
-        conn.close()
-        return jsonify([list(r) for r in result])
-    
-    return execute_with_retry(_get_contractors)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, phone, email FROM contractors ORDER BY name")
+    result = cursor.fetchall()
+    conn.close()
+    return jsonify([list(r) for r in result])
 
 @app.route('/api/painters', methods=['GET'])
 def get_painters():
@@ -509,19 +478,16 @@ def get_painters():
     if not user:
         return jsonify({"detail": "Не авторизован"}), 401
     
-    def _get_painters():
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, name, phone, address, COALESCE(max_paint_length_m, 3.0) 
-            FROM painters ORDER BY name
-        """)
-        result = cursor.fetchall()
-        conn.close()
-        return jsonify([list(r) for r in result])
-    
-    return execute_with_retry(_get_painters)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, name, phone, address, COALESCE(max_paint_length_m, 3.0) 
+        FROM painters ORDER BY name
+    """)
+    result = cursor.fetchall()
+    conn.close()
+    return jsonify([list(r) for r in result])
 
 @app.route('/api/categories', methods=['GET'])
 def get_categories():
@@ -530,16 +496,13 @@ def get_categories():
     if not user:
         return jsonify({"detail": "Не авторизован"}), 401
     
-    def _get_categories():
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, name FROM categories ORDER BY name")
-        result = cursor.fetchall()
-        conn.close()
-        return jsonify([list(r) for r in result])
-    
-    return execute_with_retry(_get_categories)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name FROM categories ORDER BY name")
+    result = cursor.fetchall()
+    conn.close()
+    return jsonify([list(r) for r in result])
 
 # ========== API: ЗАКАЗЫ ==========
 @app.route('/api/orders', methods=['GET'])
@@ -549,31 +512,28 @@ def get_orders():
     if not user:
         return jsonify({"detail": "Не авторизован"}), 401
     
-    def _get_orders():
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT 
-                h.id, h.order_number, h.created_at, 
-                COALESCE(c.name, '') as contractor, h.workshop,
-                COALESCE((SELECT COUNT(*) FROM order_items i WHERE i.order_id = h.id), 0) as positions,
-                COALESCE((SELECT SUM(i.total_meters) FROM order_items i WHERE i.order_id = h.id AND i.measure_type = 'meters'), 0) as total_meters,
-                COALESCE((SELECT SUM(i.total_weight) FROM order_items i WHERE i.order_id = h.id), 0) as total_weight,
-                h.total_pages,
-                h.locked_by,
-                COALESCE(u.full_name, u.username, '') as locked_by_name,
-                h.uuid
-            FROM orders h
-            LEFT JOIN contractors c ON h.contractor_id = c.id
-            LEFT JOIN users u ON h.locked_by = u.id
-            ORDER BY h.created_at DESC
-        ''')
-        result = cursor.fetchall()
-        conn.close()
-        return jsonify([list(r) for r in result])
-    
-    return execute_with_retry(_get_orders)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT 
+            h.id, h.order_number, h.created_at, 
+            COALESCE(c.name, '') as contractor, h.workshop,
+            COALESCE((SELECT COUNT(*) FROM order_items i WHERE i.order_id = h.id), 0) as positions,
+            COALESCE((SELECT SUM(i.total_meters) FROM order_items i WHERE i.order_id = h.id AND i.measure_type = 'meters'), 0) as total_meters,
+            COALESCE((SELECT SUM(i.total_weight) FROM order_items i WHERE i.order_id = h.id), 0) as total_weight,
+            h.total_pages,
+            h.locked_by,
+            COALESCE(u.full_name, u.username, '') as locked_by_name,
+            h.uuid
+        FROM orders h
+        LEFT JOIN contractors c ON h.contractor_id = c.id
+        LEFT JOIN users u ON h.locked_by = u.id
+        ORDER BY h.created_at DESC
+    ''')
+    result = cursor.fetchall()
+    conn.close()
+    return jsonify([list(r) for r in result])
 
 @app.route('/api/orders/<int:order_id>', methods=['GET'])
 def get_order(order_id):
@@ -582,38 +542,35 @@ def get_order(order_id):
     if not user:
         return jsonify({"detail": "Не авторизован"}), 401
     
-    def _get_order():
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-            SELECT id, order_number, contractor_id, workshop, painter_id, total_pages, 
-                   created_by, created_at, updated_at, version, locked_by, locked_at, uuid
-            FROM orders WHERE id = ?
-        """, (order_id,))
-        order = cursor.fetchone()
-        
-        if not order:
-            conn.close()
-            return jsonify({"detail": "Заявка не найдена"}), 404
-        
-        cursor.execute("""
-            SELECT id, page_number, profile_name, height_mm, width_mm, length_mm,
-                   quantity, color_name, total_meters, total_weight, comment, measure_type,
-                   is_defective, defective_id, defective_quantity, page_painter_id, current_status
-            FROM order_items WHERE order_id = ?
-            ORDER BY page_number, id
-        """, (order_id,))
-        items = cursor.fetchall()
-        conn.close()
-        
-        return jsonify({
-            "order": dict(order),
-            "items": [dict(item) for item in items]
-        })
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
     
-    return execute_with_retry(_get_order)
+    cursor.execute("""
+        SELECT id, order_number, contractor_id, workshop, painter_id, total_pages, 
+               created_by, created_at, updated_at, version, locked_by, locked_at, uuid
+        FROM orders WHERE id = ?
+    """, (order_id,))
+    order = cursor.fetchone()
+    
+    if not order:
+        conn.close()
+        return jsonify({"detail": "Заявка не найдена"}), 404
+    
+    cursor.execute("""
+        SELECT id, page_number, profile_name, height_mm, width_mm, length_mm,
+               quantity, color_name, total_meters, total_weight, comment, measure_type,
+               is_defective, defective_id, defective_quantity, page_painter_id, current_status
+        FROM order_items WHERE order_id = ?
+        ORDER BY page_number, id
+    """, (order_id,))
+    items = cursor.fetchall()
+    conn.close()
+    
+    return jsonify({
+        "order": dict(order),
+        "items": [dict(item) for item in items]
+    })
 
 # ========== API: СОХРАНЕНИЕ ЗАКАЗОВ ==========
 @app.route('/api/orders/save', methods=['POST'])
@@ -624,8 +581,8 @@ def save_order():
         return jsonify({"detail": "Не авторизован"}), 401
     
     data = request.get_json()
-    order_id = data.get('order_id')
-    order_uuid = data.get('order_uuid')
+    order_id = data.get('order_id')  # Может быть None
+    order_uuid = data.get('order_uuid')  # Может быть None
     order_number = data.get('order_number', '')
     contractor_id = data.get('contractor_id')
     workshop = data.get('workshop', 1)
@@ -634,11 +591,14 @@ def save_order():
     items = data.get('items', [])
     user_id = data.get('user_id', user['id'])
     
-    def _save():
-        nonlocal order_id  # <--- ЭТА СТРОКА ИСПРАВЛЯЕТ ОШИБКУ
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        
+    # ЕСЛИ НЕТ UUID - ГЕНЕРИРУЕМ НА СЕРВЕРЕ
+    if not order_uuid:
+        order_uuid = str(uuid.uuid4())
+    
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    try:
         if order_id:
             # ОБНОВЛЕНИЕ СУЩЕСТВУЮЩЕЙ ЗАЯВКИ
             cursor.execute("SELECT version, uuid FROM orders WHERE id = ?", (order_id,))
@@ -696,15 +656,12 @@ def save_order():
         
         else:
             # СОЗДАНИЕ НОВОЙ ЗАЯВКИ
-            if not order_uuid:
-                order_uuid = str(uuid.uuid4())
-            
             cursor.execute('''
                 INSERT INTO orders (uuid, order_number, contractor_id, workshop, painter_id, total_pages, created_by)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             ''', (order_uuid, order_number, contractor_id, workshop, painter_id, total_pages, user_id))
             
-            order_id = cursor.lastrowid
+            new_order_id = cursor.lastrowid
             
             for item in items:
                 cursor.execute('''
@@ -712,7 +669,7 @@ def save_order():
                                              quantity, color_name, total_meters, total_weight, comment, measure_type,
                                              is_defective, defective_id, defective_quantity, page_painter_id, current_status)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (order_id, item.get('page_number', 1), item.get('profile_name', ''),
+                ''', (new_order_id, item.get('page_number', 1), item.get('profile_name', ''),
                       item.get('height_mm', 0), item.get('width_mm', 0), item.get('length_mm', 0),
                       item.get('quantity', 1), item.get('color_name', ''), item.get('total_meters', 0),
                       item.get('total_weight', 0), item.get('comment', ''), item.get('measure_type', 'meters'),
@@ -721,7 +678,7 @@ def save_order():
             
             # Создаём первую версию
             order_data = {
-                "order_id": order_id,
+                "order_id": new_order_id,
                 "order_uuid": order_uuid,
                 "order_number": order_number,
                 "contractor_id": contractor_id,
@@ -733,14 +690,18 @@ def save_order():
             cursor.execute('''
                 INSERT INTO order_versions (order_id, version_number, data, changed_by)
                 VALUES (?, ?, ?, ?)
-            ''', (order_id, 1, json.dumps(order_data, ensure_ascii=False), user_id))
+            ''', (new_order_id, 1, json.dumps(order_data, ensure_ascii=False), user_id))
             
             conn.commit()
             conn.close()
             
-            return jsonify({"message": "Заявка создана", "order_id": order_id, "version": 1, "uuid": order_uuid})
+            return jsonify({"message": "Заявка создана", "order_id": new_order_id, "version": 1, "uuid": order_uuid})
     
-    return execute_with_retry(_save)
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        print(f"Ошибка сохранения заказа: {e}")
+        return jsonify({"detail": str(e)}), 500
 
 # ========== API: БЛОКИРОВКИ ==========
 @app.route('/api/orders/<int:order_id>/lock', methods=['POST'])
@@ -753,31 +714,28 @@ def lock_order(order_id):
     data = request.get_json()
     user_id = data.get('user_id', user['id'])
     
-    def _lock():
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT locked_by FROM orders WHERE id = ?", (order_id,))
-        order = cursor.fetchone()
-        
-        if not order:
-            conn.close()
-            return jsonify({"detail": "Заявка не найдена"}), 404
-        
-        if order['locked_by']:
-            conn.close()
-            return jsonify({"detail": "Заявка уже заблокирована"}), 409
-        
-        cursor.execute("""
-            UPDATE orders SET locked_by = ?, locked_at = CURRENT_TIMESTAMP WHERE id = ?
-        """, (user_id, order_id))
-        conn.commit()
-        conn.close()
-        
-        return jsonify({"message": "Заявка заблокирована"})
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
     
-    return execute_with_retry(_lock)
+    cursor.execute("SELECT locked_by FROM orders WHERE id = ?", (order_id,))
+    order = cursor.fetchone()
+    
+    if not order:
+        conn.close()
+        return jsonify({"detail": "Заявка не найдена"}), 404
+    
+    if order['locked_by']:
+        conn.close()
+        return jsonify({"detail": "Заявка уже заблокирована"}), 409
+    
+    cursor.execute("""
+        UPDATE orders SET locked_by = ?, locked_at = CURRENT_TIMESTAMP WHERE id = ?
+    """, (user_id, order_id))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({"message": "Заявка заблокирована"})
 
 @app.route('/api/orders/<int:order_id>/unlock', methods=['POST'])
 def unlock_order(order_id):
@@ -786,29 +744,26 @@ def unlock_order(order_id):
     if not user:
         return jsonify({"detail": "Не авторизован"}), 401
     
-    def _unlock():
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT locked_by FROM orders WHERE id = ?", (order_id,))
-        order = cursor.fetchone()
-        
-        if not order:
-            conn.close()
-            return jsonify({"detail": "Заявка не найдена"}), 404
-        
-        if order['locked_by'] and order['locked_by'] != user['id'] and user['role'] != 'admin':
-            conn.close()
-            return jsonify({"detail": "Вы не можете разблокировать заявку"}), 403
-        
-        cursor.execute("UPDATE orders SET locked_by = NULL, locked_at = NULL WHERE id = ?", (order_id,))
-        conn.commit()
-        conn.close()
-        
-        return jsonify({"message": "Заявка разблокирована"})
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
     
-    return execute_with_retry(_unlock)
+    cursor.execute("SELECT locked_by FROM orders WHERE id = ?", (order_id,))
+    order = cursor.fetchone()
+    
+    if not order:
+        conn.close()
+        return jsonify({"detail": "Заявка не найдена"}), 404
+    
+    if order['locked_by'] and order['locked_by'] != user['id'] and user['role'] != 'admin':
+        conn.close()
+        return jsonify({"detail": "Вы не можете разблокировать заявку"}), 403
+    
+    cursor.execute("UPDATE orders SET locked_by = NULL, locked_at = NULL WHERE id = ?", (order_id,))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({"message": "Заявка разблокирована"})
 
 # ========== ГЛАВНЫЙ ЭНДПОИНТ ==========
 @app.route('/')
