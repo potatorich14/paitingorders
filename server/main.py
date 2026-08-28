@@ -8,8 +8,9 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Any
 
-import psycopg2
-from psycopg2.extras import RealDictCursor
+# Используем новый пакет psycopg (не psycopg2)
+import psycopg
+from psycopg.rows import dict_row
 from flask import Flask, request, jsonify, g
 
 app = Flask(__name__)
@@ -20,7 +21,7 @@ DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql://localhost/painting_o
 def get_db():
     """Получение соединения с БД"""
     if 'db' not in g:
-        g.db = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+        g.db = psycopg.connect(DATABASE_URL, row_factory=dict_row)
     return g.db
 
 @app.teardown_appcontext
@@ -56,7 +57,7 @@ def generate_token() -> str:
 
 def init_db():
     """Создаёт таблицы в PostgreSQL"""
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = psycopg.connect(DATABASE_URL)
     cursor = conn.cursor()
     
     # Таблица пользователей
@@ -253,7 +254,7 @@ def login():
     username = data.get('username', '')
     password = data.get('password', '')
     
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
     cursor = conn.cursor()
     
     cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
@@ -297,7 +298,7 @@ def logout():
     auth_header = request.headers.get('Authorization', '')
     if auth_header.startswith('Bearer '):
         token = auth_header[7:]
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = psycopg.connect(DATABASE_URL)
         cursor = conn.cursor()
         cursor.execute("DELETE FROM sessions WHERE token = %s", (token,))
         conn.commit()
@@ -312,7 +313,7 @@ def get_current_user():
     
     token = auth_header[7:]
     
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
     cursor = conn.cursor()
     
     cursor.execute("""
@@ -333,7 +334,7 @@ def get_current_user():
         try:
             expires_at = datetime.fromisoformat(row['expires_at'])
             if expires_at < datetime.now():
-                conn = psycopg2.connect(DATABASE_URL)
+                conn = psycopg.connect(DATABASE_URL)
                 cursor = conn.cursor()
                 cursor.execute("DELETE FROM sessions WHERE token = %s", (token,))
                 conn.commit()
@@ -358,7 +359,7 @@ def get_users():
     if not user or user['role'] != 'admin':
         return jsonify({"detail": "Недостаточно прав"}), 403
     
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
     cursor = conn.cursor()
     cursor.execute("SELECT id, username, full_name, role, is_active, created_at FROM users ORDER BY username")
     users = cursor.fetchall()
@@ -385,7 +386,7 @@ def create_user():
     if len(password) < 6:
         return jsonify({"detail": "Пароль должен содержать минимум 6 символов"}), 400
     
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = psycopg.connect(DATABASE_URL)
     cursor = conn.cursor()
     
     cursor.execute("SELECT COUNT(*) FROM users WHERE username = %s", (username,))
@@ -418,7 +419,7 @@ def get_profiles():
     if not user:
         return jsonify({"detail": "Не авторизован"}), 401
     
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
     cursor = conn.cursor()
     cursor.execute("""
         SELECT p.name, c.name as category, p.height_mm, p.width_mm, 
@@ -432,7 +433,7 @@ def get_profiles():
     result = cursor.fetchall()
     conn.close()
     
-    return jsonify([list(r.values()) for r in result])
+    return jsonify(result)
 
 @app.route('/api/colors', methods=['GET'])
 def get_colors():
@@ -441,13 +442,13 @@ def get_colors():
     if not user:
         return jsonify({"detail": "Не авторизован"}), 401
     
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
     cursor = conn.cursor()
     cursor.execute("SELECT id, name, code, category_id FROM colors ORDER BY name")
     result = cursor.fetchall()
     conn.close()
     
-    return jsonify([list(r.values()) for r in result])
+    return jsonify(result)
 
 @app.route('/api/contractors', methods=['GET'])
 def get_contractors():
@@ -456,13 +457,13 @@ def get_contractors():
     if not user:
         return jsonify({"detail": "Не авторизован"}), 401
     
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
     cursor = conn.cursor()
     cursor.execute("SELECT id, name, phone, email FROM contractors ORDER BY name")
     result = cursor.fetchall()
     conn.close()
     
-    return jsonify([list(r.values()) for r in result])
+    return jsonify(result)
 
 @app.route('/api/painters', methods=['GET'])
 def get_painters():
@@ -471,7 +472,7 @@ def get_painters():
     if not user:
         return jsonify({"detail": "Не авторизован"}), 401
     
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
     cursor = conn.cursor()
     cursor.execute("""
         SELECT id, name, phone, address, COALESCE(max_paint_length_m, 3.0) 
@@ -480,7 +481,7 @@ def get_painters():
     result = cursor.fetchall()
     conn.close()
     
-    return jsonify([list(r.values()) for r in result])
+    return jsonify(result)
 
 @app.route('/api/categories', methods=['GET'])
 def get_categories():
@@ -489,13 +490,13 @@ def get_categories():
     if not user:
         return jsonify({"detail": "Не авторизован"}), 401
     
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
     cursor = conn.cursor()
     cursor.execute("SELECT id, name FROM categories ORDER BY name")
     result = cursor.fetchall()
     conn.close()
     
-    return jsonify([list(r.values()) for r in result])
+    return jsonify(result)
 
 # ========== API: ЗАКАЗЫ ==========
 @app.route('/api/orders', methods=['GET'])
@@ -505,7 +506,7 @@ def get_orders():
     if not user:
         return jsonify({"detail": "Не авторизован"}), 401
     
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
     cursor = conn.cursor()
     cursor.execute('''
         SELECT 
@@ -526,7 +527,7 @@ def get_orders():
     result = cursor.fetchall()
     conn.close()
     
-    return jsonify([list(r.values()) for r in result])
+    return jsonify(result)
 
 @app.route('/api/orders/<int:order_id>', methods=['GET'])
 def get_order(order_id):
@@ -535,7 +536,7 @@ def get_order(order_id):
     if not user:
         return jsonify({"detail": "Не авторизован"}), 401
     
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
     cursor = conn.cursor()
     
     cursor.execute("""
@@ -583,7 +584,7 @@ def save_order():
     items = data.get('items', [])
     user_id = data.get('user_id', user['id'])
     
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = psycopg.connect(DATABASE_URL)
     cursor = conn.cursor()
     
     if order_id:
@@ -698,7 +699,7 @@ def lock_order(order_id):
     data = request.get_json()
     user_id = data.get('user_id', user['id'])
     
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
     cursor = conn.cursor()
     
     cursor.execute("SELECT locked_by FROM orders WHERE id = %s", (order_id,))
@@ -727,7 +728,7 @@ def unlock_order(order_id):
     if not user:
         return jsonify({"detail": "Не авторизован"}), 401
     
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
     cursor = conn.cursor()
     
     cursor.execute("SELECT locked_by FROM orders WHERE id = %s", (order_id,))
