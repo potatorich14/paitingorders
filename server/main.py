@@ -685,6 +685,108 @@ def get_orders():
     conn.close()
     return jsonify([list(r) for r in result])
 
+@app.route('/api/orders/recent', methods=['GET'])
+def get_recent_orders():
+    """Получить последние 30 заказов"""
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Не авторизован"}), 401
+    
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT 
+            h.id, h.order_number, h.created_at, 
+            COALESCE(c.name, '') as contractor, h.workshop,
+            COALESCE((SELECT COUNT(*) FROM order_items i WHERE i.order_id = h.id), 0) as positions,
+            COALESCE((SELECT SUM(i.total_meters) FROM order_items i WHERE i.order_id = h.id AND i.measure_type = 'meters'), 0) as total_meters,
+            COALESCE((SELECT SUM(i.total_weight) FROM order_items i WHERE i.order_id = h.id), 0) as total_weight,
+            h.total_pages,
+            h.locked_by,
+            COALESCE(u.full_name, u.username, '') as locked_by_name,
+            h.uuid
+        FROM orders h
+        LEFT JOIN contractors c ON h.contractor_id = c.id
+        LEFT JOIN users u ON h.locked_by = u.id
+        ORDER BY h.created_at DESC
+        LIMIT 30
+    ''')
+    result = cursor.fetchall()
+    conn.close()
+    return jsonify([list(r) for r in result])
+
+@app.route('/api/orders/page', methods=['GET'])
+def get_orders_page():
+    """Получить заказы с пагинацией"""
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Не авторизован"}), 401
+    
+    page = int(request.args.get('page', 1))
+    per_page = int(request.args.get('per_page', 50))
+    offset = (page - 1) * per_page
+    
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT 
+            h.id, h.order_number, h.created_at, 
+            COALESCE(c.name, '') as contractor, h.workshop,
+            COALESCE((SELECT COUNT(*) FROM order_items i WHERE i.order_id = h.id), 0) as positions,
+            COALESCE((SELECT SUM(i.total_meters) FROM order_items i WHERE i.order_id = h.id AND i.measure_type = 'meters'), 0) as total_meters,
+            COALESCE((SELECT SUM(i.total_weight) FROM order_items i WHERE i.order_id = h.id), 0) as total_weight,
+            h.total_pages,
+            h.locked_by,
+            COALESCE(u.full_name, u.username, '') as locked_by_name,
+            h.uuid
+        FROM orders h
+        LEFT JOIN contractors c ON h.contractor_id = c.id
+        LEFT JOIN users u ON h.locked_by = u.id
+        ORDER BY h.created_at DESC
+        LIMIT ? OFFSET ?
+    ''', (per_page, offset))
+    result = cursor.fetchall()
+    conn.close()
+    return jsonify([list(r) for r in result])
+
+@app.route('/api/orders/search', methods=['GET'])
+def search_orders():
+    """Поиск заказов по номеру"""
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Не авторизован"}), 401
+    
+    query = request.args.get('q', '').strip()
+    
+    if not query:
+        return jsonify([])
+    
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT 
+            h.id, h.order_number, h.created_at, 
+            COALESCE(c.name, '') as contractor, h.workshop,
+            COALESCE((SELECT COUNT(*) FROM order_items i WHERE i.order_id = h.id), 0) as positions,
+            COALESCE((SELECT SUM(i.total_meters) FROM order_items i WHERE i.order_id = h.id AND i.measure_type = 'meters'), 0) as total_meters,
+            COALESCE((SELECT SUM(i.total_weight) FROM order_items i WHERE i.order_id = h.id), 0) as total_weight,
+            h.total_pages,
+            h.locked_by,
+            COALESCE(u.full_name, u.username, '') as locked_by_name,
+            h.uuid
+        FROM orders h
+        LEFT JOIN contractors c ON h.contractor_id = c.id
+        LEFT JOIN users u ON h.locked_by = u.id
+        WHERE h.order_number LIKE ?
+        ORDER BY h.created_at DESC
+    ''', (f'%{query}%',))
+    result = cursor.fetchall()
+    conn.close()
+    return jsonify([list(r) for r in result])
+
 @app.route('/api/orders/<int:order_id>', methods=['GET'])
 def get_order(order_id):
     """Получить заявку по ID"""
