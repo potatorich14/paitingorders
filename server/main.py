@@ -567,6 +567,33 @@ def create_painter():
         conn.close()
         return jsonify({"detail": "Покрасчик с таким именем уже существует"}), 400
 
+@app.route('/api/color_categories', methods=['POST'])
+def create_color_category():
+    """Добавить категорию цветов"""
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Не авторизован"}), 401
+    
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    
+    if not name:
+        return jsonify({"detail": "Введите название категории"}), 400
+    
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("INSERT INTO color_categories (name) VALUES (?)", (name,))
+        category_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return jsonify({"id": category_id, "name": name})
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({"detail": "Категория с таким именем уже существует"}), 400
+
 # ========== API: СПРАВОЧНИКИ (ЧТЕНИЕ) ==========
 @app.route('/api/profiles', methods=['GET'])
 def get_profiles():
@@ -650,6 +677,21 @@ def get_categories():
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute("SELECT id, name FROM categories ORDER BY name")
+    result = cursor.fetchall()
+    conn.close()
+    return jsonify([list(r) for r in result])
+
+@app.route('/api/color_categories', methods=['GET'])
+def get_color_categories():
+    """Получить список категорий цветов"""
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Не авторизован"}), 401
+    
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name FROM color_categories ORDER BY name")
     result = cursor.fetchall()
     conn.close()
     return jsonify([list(r) for r in result])
@@ -1069,6 +1111,38 @@ def unlock_order(order_id):
     conn.close()
     
     return jsonify({"message": "Заявка разблокирована"})
+
+# ========== API: УДАЛЕНИЕ ЗАЯВОК ==========
+@app.route('/api/orders/<int:order_id>', methods=['DELETE'])
+def delete_order(order_id):
+    """Удалить заявку"""
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Не авторизован"}), 401
+    
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT id, locked_by FROM orders WHERE id = ?", (order_id,))
+    order = cursor.fetchone()
+    
+    if not order:
+        conn.close()
+        return jsonify({"detail": "Заявка не найдена"}), 404
+    
+    if order['locked_by'] and order['locked_by'] != user['id'] and user['role'] != 'admin':
+        conn.close()
+        return jsonify({"detail": "Вы не можете удалить заявку"}), 403
+    
+    cursor.execute("DELETE FROM order_versions WHERE order_id = ?", (order_id,))
+    cursor.execute("DELETE FROM order_items WHERE order_id = ?", (order_id,))
+    cursor.execute("DELETE FROM orders WHERE id = ?", (order_id,))
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({"message": "Заявка удалена"})
 
 # ========== ГЛАВНЫЙ ЭНДПОИНТ ==========
 @app.route('/')
