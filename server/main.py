@@ -2,26 +2,25 @@
 import os
 import sys
 import json
+import sqlite3
 import hashlib
 import secrets
 import uuid
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Any
 
-# Используем новый пакет psycopg (не psycopg2)
-import psycopg
-from psycopg.rows import dict_row
 from flask import Flask, request, jsonify, g
 
 app = Flask(__name__)
 
-# Получаем URL базы данных из переменной окружения
-DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql://localhost/painting_orders')
+# Путь к базе данных
+DB_PATH = os.path.join(os.path.dirname(__file__), "server_data", "painting_orders.db")
 
 def get_db():
     """Получение соединения с БД"""
     if 'db' not in g:
-        g.db = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+        g.db = sqlite3.connect(DB_PATH)
+        g.db.row_factory = sqlite3.Row
     return g.db
 
 @app.teardown_appcontext
@@ -56,19 +55,21 @@ def generate_token() -> str:
     return secrets.token_urlsafe(32)
 
 def init_db():
-    """Создаёт таблицы в PostgreSQL"""
-    conn = psycopg.connect(DATABASE_URL)
+    """Создаёт таблицы в SQLite"""
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     # Таблица пользователей
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
-            username VARCHAR(50) UNIQUE NOT NULL,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
-            full_name VARCHAR(100) DEFAULT '',
-            role VARCHAR(20) DEFAULT 'editor',
-            is_active BOOLEAN DEFAULT TRUE,
+            full_name TEXT DEFAULT '',
+            role TEXT DEFAULT 'editor',
+            is_active INTEGER DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -76,8 +77,8 @@ def init_db():
     # Таблица сессий
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS sessions (
-            id SERIAL PRIMARY KEY,
-            token VARCHAR(100) UNIQUE NOT NULL,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            token TEXT UNIQUE NOT NULL,
             user_id INTEGER NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             expires_at TIMESTAMP
@@ -87,9 +88,9 @@ def init_db():
     # Таблица заявок
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS orders (
-            id SERIAL PRIMARY KEY,
-            uuid VARCHAR(36),
-            order_number VARCHAR(50) UNIQUE NOT NULL,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uuid TEXT,
+            order_number TEXT UNIQUE NOT NULL,
             contractor_id INTEGER,
             workshop INTEGER DEFAULT 1,
             painter_id INTEGER,
@@ -106,7 +107,7 @@ def init_db():
     # Таблица позиций заявки
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS order_items (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             order_id INTEGER NOT NULL,
             page_number INTEGER DEFAULT 1,
             profile_name TEXT NOT NULL,
@@ -130,7 +131,7 @@ def init_db():
     # Таблица версий заявок
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS order_versions (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             order_id INTEGER NOT NULL,
             version_number INTEGER NOT NULL,
             data TEXT NOT NULL,
@@ -143,8 +144,8 @@ def init_db():
     # Таблица справочников: профили
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS profiles (
-            id SERIAL PRIMARY KEY,
-            name VARCHAR(100) UNIQUE NOT NULL,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
             category_id INTEGER,
             height_mm REAL DEFAULT 0,
             width_mm REAL DEFAULT 0,
@@ -154,16 +155,16 @@ def init_db():
             price REAL DEFAULT 0,
             measure_type TEXT DEFAULT 'meters',
             model_3d_path TEXT,
-            uuid VARCHAR(36)
+            uuid TEXT
         )
     ''')
     
     # Таблица справочников: цвета
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS colors (
-            id SERIAL PRIMARY KEY,
-            name VARCHAR(100) UNIQUE NOT NULL,
-            code VARCHAR(50),
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            code TEXT,
             category_id INTEGER
         )
     ''')
@@ -171,27 +172,27 @@ def init_db():
     # Таблица справочников: категории цветов
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS color_categories (
-            id SERIAL PRIMARY KEY,
-            name VARCHAR(100) UNIQUE NOT NULL
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL
         )
     ''')
     
     # Таблица справочников: контрагенты
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS contractors (
-            id SERIAL PRIMARY KEY,
-            name VARCHAR(100) UNIQUE NOT NULL,
-            phone VARCHAR(50),
-            email VARCHAR(100)
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            phone TEXT,
+            email TEXT
         )
     ''')
     
     # Таблица справочников: покрасчики
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS painters (
-            id SERIAL PRIMARY KEY,
-            name VARCHAR(100) UNIQUE NOT NULL,
-            phone VARCHAR(50),
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            phone TEXT,
             address TEXT,
             max_paint_length_m REAL DEFAULT 3.0
         )
@@ -200,15 +201,15 @@ def init_db():
     # Таблица справочников: категории
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS categories (
-            id SERIAL PRIMARY KEY,
-            name VARCHAR(100) UNIQUE NOT NULL
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL
         )
     ''')
     
     # Таблица для статусов позиций
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS order_item_status_history (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             item_id INTEGER NOT NULL,
             status TEXT NOT NULL,
             changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -221,8 +222,8 @@ def init_db():
     # Таблица брака
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS defective_profiles (
-            id SERIAL PRIMARY KEY,
-            order_number VARCHAR(50) NOT NULL,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_number TEXT NOT NULL,
             profile_name TEXT NOT NULL,
             length_mm REAL NOT NULL,
             color_name TEXT NOT NULL,
@@ -238,13 +239,13 @@ def init_db():
     if cursor.fetchone()[0] == 0:
         password_hash = hash_password("admin123")
         cursor.execute(
-            "INSERT INTO users (username, password_hash, full_name, role) VALUES (%s, %s, %s, %s)",
+            "INSERT INTO users (username, password_hash, full_name, role) VALUES (?, ?, ?, ?)",
             ("admin", password_hash, "Администратор", "admin")
         )
     
     conn.commit()
     conn.close()
-    print("База данных PostgreSQL инициализирована")
+    print(f"База данных SQLite инициализирована: {DB_PATH}")
 
 # ========== АУТЕНТИФИКАЦИЯ ==========
 @app.route('/api/auth/login', methods=['POST'])
@@ -254,10 +255,11 @@ def login():
     username = data.get('username', '')
     password = data.get('password', '')
     
-    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
-    cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+    cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
     user = cursor.fetchone()
     
     if not user:
@@ -277,7 +279,7 @@ def login():
     
     cursor.execute("""
         INSERT INTO sessions (token, user_id, expires_at)
-        VALUES (%s, %s, %s)
+        VALUES (?, ?, ?)
     """, (token, user['id'], expires_at.isoformat()))
     conn.commit()
     conn.close()
@@ -298,9 +300,9 @@ def logout():
     auth_header = request.headers.get('Authorization', '')
     if auth_header.startswith('Bearer '):
         token = auth_header[7:]
-        conn = psycopg.connect(DATABASE_URL)
+        conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM sessions WHERE token = %s", (token,))
+        cursor.execute("DELETE FROM sessions WHERE token = ?", (token,))
         conn.commit()
         conn.close()
     return jsonify({"message": "Выход выполнен"})
@@ -313,7 +315,8 @@ def get_current_user():
     
     token = auth_header[7:]
     
-    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
     cursor.execute("""
@@ -321,7 +324,7 @@ def get_current_user():
                s.expires_at
         FROM sessions s
         JOIN users u ON s.user_id = u.id
-        WHERE s.token = %s
+        WHERE s.token = ?
     """, (token,))
     row = cursor.fetchone()
     conn.close()
@@ -334,9 +337,9 @@ def get_current_user():
         try:
             expires_at = datetime.fromisoformat(row['expires_at'])
             if expires_at < datetime.now():
-                conn = psycopg.connect(DATABASE_URL)
+                conn = sqlite3.connect(DB_PATH)
                 cursor = conn.cursor()
-                cursor.execute("DELETE FROM sessions WHERE token = %s", (token,))
+                cursor.execute("DELETE FROM sessions WHERE token = ?", (token,))
                 conn.commit()
                 conn.close()
                 return None
@@ -359,13 +362,14 @@ def get_users():
     if not user or user['role'] != 'admin':
         return jsonify({"detail": "Недостаточно прав"}), 403
     
-    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute("SELECT id, username, full_name, role, is_active, created_at FROM users ORDER BY username")
     users = cursor.fetchall()
     conn.close()
     
-    return jsonify(users)
+    return jsonify([dict(u) for u in users])
 
 @app.route('/api/users', methods=['POST'])
 def create_user():
@@ -386,10 +390,10 @@ def create_user():
     if len(password) < 6:
         return jsonify({"detail": "Пароль должен содержать минимум 6 символов"}), 400
     
-    conn = psycopg.connect(DATABASE_URL)
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    cursor.execute("SELECT COUNT(*) FROM users WHERE username = %s", (username,))
+    cursor.execute("SELECT COUNT(*) FROM users WHERE username = ?", (username,))
     if cursor.fetchone()[0] > 0:
         conn.close()
         return jsonify({"detail": "Пользователь с таким именем уже существует"}), 400
@@ -397,7 +401,7 @@ def create_user():
     password_hash = hash_password(password)
     cursor.execute("""
         INSERT INTO users (username, password_hash, full_name, role)
-        VALUES (%s, %s, %s, %s)
+        VALUES (?, ?, ?, ?)
     """, (username, password_hash, full_name, role))
     user_id = cursor.lastrowid
     conn.commit()
@@ -419,7 +423,8 @@ def get_profiles():
     if not user:
         return jsonify({"detail": "Не авторизован"}), 401
     
-    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute("""
         SELECT p.name, c.name as category, p.height_mm, p.width_mm, 
@@ -433,7 +438,7 @@ def get_profiles():
     result = cursor.fetchall()
     conn.close()
     
-    return jsonify(result)
+    return jsonify([list(r) for r in result])
 
 @app.route('/api/colors', methods=['GET'])
 def get_colors():
@@ -442,13 +447,14 @@ def get_colors():
     if not user:
         return jsonify({"detail": "Не авторизован"}), 401
     
-    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute("SELECT id, name, code, category_id FROM colors ORDER BY name")
     result = cursor.fetchall()
     conn.close()
     
-    return jsonify(result)
+    return jsonify([list(r) for r in result])
 
 @app.route('/api/contractors', methods=['GET'])
 def get_contractors():
@@ -457,13 +463,14 @@ def get_contractors():
     if not user:
         return jsonify({"detail": "Не авторизован"}), 401
     
-    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute("SELECT id, name, phone, email FROM contractors ORDER BY name")
     result = cursor.fetchall()
     conn.close()
     
-    return jsonify(result)
+    return jsonify([list(r) for r in result])
 
 @app.route('/api/painters', methods=['GET'])
 def get_painters():
@@ -472,7 +479,8 @@ def get_painters():
     if not user:
         return jsonify({"detail": "Не авторизован"}), 401
     
-    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute("""
         SELECT id, name, phone, address, COALESCE(max_paint_length_m, 3.0) 
@@ -481,7 +489,7 @@ def get_painters():
     result = cursor.fetchall()
     conn.close()
     
-    return jsonify(result)
+    return jsonify([list(r) for r in result])
 
 @app.route('/api/categories', methods=['GET'])
 def get_categories():
@@ -490,13 +498,14 @@ def get_categories():
     if not user:
         return jsonify({"detail": "Не авторизован"}), 401
     
-    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute("SELECT id, name FROM categories ORDER BY name")
     result = cursor.fetchall()
     conn.close()
     
-    return jsonify(result)
+    return jsonify([list(r) for r in result])
 
 # ========== API: ЗАКАЗЫ ==========
 @app.route('/api/orders', methods=['GET'])
@@ -506,7 +515,8 @@ def get_orders():
     if not user:
         return jsonify({"detail": "Не авторизован"}), 401
     
-    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute('''
         SELECT 
@@ -527,7 +537,7 @@ def get_orders():
     result = cursor.fetchall()
     conn.close()
     
-    return jsonify(result)
+    return jsonify([list(r) for r in result])
 
 @app.route('/api/orders/<int:order_id>', methods=['GET'])
 def get_order(order_id):
@@ -536,13 +546,14 @@ def get_order(order_id):
     if not user:
         return jsonify({"detail": "Не авторизован"}), 401
     
-    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
     cursor.execute("""
         SELECT id, order_number, contractor_id, workshop, painter_id, total_pages, 
                created_by, created_at, updated_at, version, locked_by, locked_at, uuid
-        FROM orders WHERE id = %s
+        FROM orders WHERE id = ?
     """, (order_id,))
     order = cursor.fetchone()
     
@@ -554,15 +565,15 @@ def get_order(order_id):
         SELECT id, page_number, profile_name, height_mm, width_mm, length_mm,
                quantity, color_name, total_meters, total_weight, comment, measure_type,
                is_defective, defective_id, defective_quantity, page_painter_id, current_status
-        FROM order_items WHERE order_id = %s
+        FROM order_items WHERE order_id = ?
         ORDER BY page_number, id
     """, (order_id,))
     items = cursor.fetchall()
     conn.close()
     
     return jsonify({
-        "order": order,
-        "items": items
+        "order": dict(order),
+        "items": [dict(item) for item in items]
     })
 
 # ========== API: СОХРАНЕНИЕ ЗАКАЗОВ ==========
@@ -584,12 +595,12 @@ def save_order():
     items = data.get('items', [])
     user_id = data.get('user_id', user['id'])
     
-    conn = psycopg.connect(DATABASE_URL)
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     if order_id:
         # ОБНОВЛЕНИЕ СУЩЕСТВУЮЩЕЙ ЗАЯВКИ
-        cursor.execute("SELECT version, uuid FROM orders WHERE id = %s", (order_id,))
+        cursor.execute("SELECT version, uuid FROM orders WHERE id = ?", (order_id,))
         existing = cursor.fetchone()
         
         if existing:
@@ -599,19 +610,19 @@ def save_order():
             
             cursor.execute('''
                 UPDATE orders 
-                SET contractor_id = %s, workshop = %s, painter_id = %s, total_pages = %s,
-                    updated_at = CURRENT_TIMESTAMP, version = %s, uuid = %s
-                WHERE id = %s
+                SET contractor_id = ?, workshop = ?, painter_id = ?, total_pages = ?,
+                    updated_at = CURRENT_TIMESTAMP, version = ?, uuid = ?
+                WHERE id = ?
             ''', (contractor_id, workshop, painter_id, total_pages, new_version, db_uuid, order_id))
             
-            cursor.execute("DELETE FROM order_items WHERE order_id = %s", (order_id,))
+            cursor.execute("DELETE FROM order_items WHERE order_id = ?", (order_id,))
             
             for item in items:
                 cursor.execute('''
                     INSERT INTO order_items (order_id, page_number, profile_name, height_mm, width_mm, length_mm,
                                              quantity, color_name, total_meters, total_weight, comment, measure_type,
                                              is_defective, defective_id, defective_quantity, page_painter_id, current_status)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (order_id, item.get('page_number', 1), item.get('profile_name', ''),
                       item.get('height_mm', 0), item.get('width_mm', 0), item.get('length_mm', 0),
                       item.get('quantity', 1), item.get('color_name', ''), item.get('total_meters', 0),
@@ -632,10 +643,10 @@ def save_order():
             }
             cursor.execute('''
                 INSERT INTO order_versions (order_id, version_number, data, changed_by)
-                VALUES (%s, %s, %s, %s)
+                VALUES (?, ?, ?, ?)
             ''', (order_id, new_version, json.dumps(order_data, ensure_ascii=False), user_id))
             
-            cursor.execute("UPDATE orders SET locked_by = NULL, locked_at = NULL WHERE id = %s", (order_id,))
+            cursor.execute("UPDATE orders SET locked_by = NULL, locked_at = NULL WHERE id = ?", (order_id,))
             
             conn.commit()
             conn.close()
@@ -649,7 +660,7 @@ def save_order():
         
         cursor.execute('''
             INSERT INTO orders (uuid, order_number, contractor_id, workshop, painter_id, total_pages, created_by)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (order_uuid, order_number, contractor_id, workshop, painter_id, total_pages, user_id))
         
         order_id = cursor.lastrowid
@@ -659,7 +670,7 @@ def save_order():
                 INSERT INTO order_items (order_id, page_number, profile_name, height_mm, width_mm, length_mm,
                                          quantity, color_name, total_meters, total_weight, comment, measure_type,
                                          is_defective, defective_id, defective_quantity, page_painter_id, current_status)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (order_id, item.get('page_number', 1), item.get('profile_name', ''),
                   item.get('height_mm', 0), item.get('width_mm', 0), item.get('length_mm', 0),
                   item.get('quantity', 1), item.get('color_name', ''), item.get('total_meters', 0),
@@ -680,7 +691,7 @@ def save_order():
         }
         cursor.execute('''
             INSERT INTO order_versions (order_id, version_number, data, changed_by)
-            VALUES (%s, %s, %s, %s)
+            VALUES (?, ?, ?, ?)
         ''', (order_id, 1, json.dumps(order_data, ensure_ascii=False), user_id))
         
         conn.commit()
@@ -699,10 +710,11 @@ def lock_order(order_id):
     data = request.get_json()
     user_id = data.get('user_id', user['id'])
     
-    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
-    cursor.execute("SELECT locked_by FROM orders WHERE id = %s", (order_id,))
+    cursor.execute("SELECT locked_by FROM orders WHERE id = ?", (order_id,))
     order = cursor.fetchone()
     
     if not order:
@@ -714,7 +726,7 @@ def lock_order(order_id):
         return jsonify({"detail": "Заявка уже заблокирована"}), 409
     
     cursor.execute("""
-        UPDATE orders SET locked_by = %s, locked_at = CURRENT_TIMESTAMP WHERE id = %s
+        UPDATE orders SET locked_by = ?, locked_at = CURRENT_TIMESTAMP WHERE id = ?
     """, (user_id, order_id))
     conn.commit()
     conn.close()
@@ -728,10 +740,11 @@ def unlock_order(order_id):
     if not user:
         return jsonify({"detail": "Не авторизован"}), 401
     
-    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
-    cursor.execute("SELECT locked_by FROM orders WHERE id = %s", (order_id,))
+    cursor.execute("SELECT locked_by FROM orders WHERE id = ?", (order_id,))
     order = cursor.fetchone()
     
     if not order:
@@ -742,7 +755,7 @@ def unlock_order(order_id):
         conn.close()
         return jsonify({"detail": "Вы не можете разблокировать заявку"}), 403
     
-    cursor.execute("UPDATE orders SET locked_by = NULL, locked_at = NULL WHERE id = %s", (order_id,))
+    cursor.execute("UPDATE orders SET locked_by = NULL, locked_at = NULL WHERE id = ?", (order_id,))
     conn.commit()
     conn.close()
     
